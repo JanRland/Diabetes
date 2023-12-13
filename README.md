@@ -1,26 +1,9 @@
 # Diabetes
-This repository contains the preprocessing and the final convolutional neural networks for the skin lesion classification of the [HAM10000](https://www.nature.com/articles/sdata2018161) data set. The data was analysed in order to be used in the [Virtual Doctor](https://pubmed.ncbi.nlm.nih.gov/31607340/) project as a non-invasive diagnostic tool. The project was partily funded by hessen.AI.
+This repository contains the analysis results for machine learning models using the [diabetes data set](https://www.sciencedirect.com/science/article/pii/S0002870302000698) collected during the Heinz Nixdorf RECALL Study. To obtain access to the data set, the responsible principal investigator has to be contacted. 
 
 
 # Data 
-For training the convolutional neural networks (CNNs), we used the training and test data set provided by the [HAM10000](https://www.nature.com/articles/sdata2018161) challenge. Data augmentation and upsampling was used to stratify the data set and learning rate annihilation for the training process. From current literature, we identified CNN archtectures that are commonly used for image classification tasks and applied transfer learning. The results for the evaluation on the test set are given in the following table:
-
-| Architecture | Accuracy | Weighted F1 | MCC |
-|------------- | ------------- |------------- | ------------- | 
-| DenseNet169 | 0.836 | 0.831 | 0.717 |
-| DenseNet201 | 0.835 | 0.828 | 0.714 |
-| Inception_V3 | 0.829 | 0.821 | 0.701 |
-| ResNet50 | 0.821 | 0.815 | 0.691 |
-| ResNet101 | 0.819 | 0.814 | 0.690 |
-| ResNet18 | 0.817 | 0.813 | 0.686 |
-| ResNet34 | 0.815 | 0.808 | 0.679 |
-| DenseNet121 | 0.810 | 0.804 | 0.673 |
-| VGG19 | 0.772 | 0.768 | 0.610 |
-| SqueezeNet | 0.750 | 0.757 | 0.597 |
-| AlexNet | 0.723 | 0.724 | 0.549 |
-
-
-Three different evaluation measures were used to analyse the final result. This avoids any manipulation by the applied augmentation/upsampling techniques. 
+A detailed description of the data set can be found [here](https://www.sciencedirect.com/science/article/pii/S0933365719301083?via%3Dihub#bib0125). We split the data set into 
 
 # Getting started
 The augmented data can be generated using the Preprocessing.py script in the src folder. The training routine is defined by the Training.py script in the src folder. The weights of the resulting DenseNet201 is saved in the result folder. In order to use 
