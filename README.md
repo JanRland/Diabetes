@@ -3,7 +3,7 @@ This repository contains the analysis results for machine learning models using 
 
 
 # Data 
-A detailed description of the data set can be found [here](https://www.sciencedirect.com/science/article/pii/S0933365719301083?via%3Dihub#bib0125). We split the data set into 
+A detailed description of the data set can be found [here](https://www.sciencedirect.com/science/article/pii/S0933365719301083?via%3Dihub#bib0125). We split the data set into training, validation and test data set. In contrast to the [first analysis](https://www.sciencedirect.com/science/article/pii/S0933365719301083?via%3Dihub#bib0125) of the data set, cross-validation and upsampling techniques were applied to improve the classification performance and avoid overfitting. 
 
 # Getting started
 The augmented data can be generated using the Preprocessing.py script in the src folder. The training routine is defined by the Training.py script in the src folder. The weights of the resulting DenseNet201 is saved in the result folder. In order to use 
@@ -27,8 +27,7 @@ Please cite following publication if you use the results:
 
 
 # Authors
-   * Dmitry Degtyar, main contributor and analyst
-   * Jan Benedikt Ruhland, supervisor
+   * Jan Benedikt Ruhland, main contributor
    * Prof. Dr. Dominik Heider, principal inversitgator
 
 
