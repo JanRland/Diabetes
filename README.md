@@ -9,7 +9,7 @@ A detailed description of the data set can be found [here](https://www.sciencedi
 The augmented data can be generated using the Preprocessing.py script in the src folder. The training routine is defined by the Training.py script in the src folder. The weights of the resulting DenseNet201 is saved in the result folder. In order to use 
 
 
-![ROC for gausian noise upsampling](images/ROC_res0.png)
+![ROC for gausian noise upsampling](images/ROC_woAugmentation.png)
 
 
 ## Requirements
