@@ -16,6 +16,7 @@ The model used for the predictions is saved in the Diabetes.py file in the src f
 
 The best fold was used for significance testing using the [DeLong value](https://pubmed.ncbi.nlm.nih.gov/3203132/) on the test set. No significant difference between Gausian noise upsampling and SMOTE could be observed in the analysis. 
 The evaluation on the test set is shown in the following image:
+
 <img src="images/ROC_testSet.png" alt="ROC_testSet" width="400"/>
 
 ## Requirements
