@@ -11,7 +11,7 @@ The augmented data can be generated using the Preprocessing.py script in the src
 
 <p float="left">
   <img src="images/ROC_woAugmentation.png" alt="ROC_woAugmentation" width="400"/>
-  <img src="images/ROC_woAugmentation.png" alt="ROC_woAugmentation" width="400"/>
+  <img src="images/ROC_woAugmentation.png" alt="ROC_wGaussUpsampling" width="400"/>
 </p>
 
 
