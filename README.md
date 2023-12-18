@@ -10,7 +10,7 @@ The augmented data can be generated using the Preprocessing.py script in the src
 
 
 ![ROC for gausian noise upsampling](images/ROC_woAugmentation.png)
-
+<img src="images/ROC_woAugmentation.png" alt="ROC_woAugmentation" width="200"/>
 
 ## Requirements
 The python scripts were tested with following packages and versions: 
