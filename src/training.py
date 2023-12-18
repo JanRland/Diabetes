@@ -13,7 +13,6 @@ from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 import numpy as np
 import pickle as pkl
 from DataAugment import Augmentation
-import sys
 from Diabetes import Diabetes
 
 

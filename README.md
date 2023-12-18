@@ -6,7 +6,7 @@ This repository contains the analysis results for machine learning models using 
 A detailed description of the data set can be found [here](https://www.sciencedirect.com/science/article/pii/S0933365719301083?via%3Dihub#bib0125). We split the data set into training, validation and test data set. In contrast to the [first analysis](https://www.sciencedirect.com/science/article/pii/S0933365719301083?via%3Dihub#bib0125) of the data set, cross-validation and upsampling techniques were applied to improve the classification performance and avoid overfitting. 
 
 # Getting started
-The augmented data can be generated using the Preprocessing.py script in the src folder. The training routine is defined by the Training.py script in the src folder. The weights of the resulting DenseNet201 is saved in the result folder. In order to use 
+The model used for the predictions is saved in the Diabetes.py file in the src folder. The training routine is described in the training.py file in the src folder. We compared SMOTE, Gausian noise upsampling and downsampling for data stratification. The left image shows the results of the 10-fold cross validation for the downsampling approach and in the right image the results for Gausian noise upsampling can be observed.
 
 
 <p float="left">
@@ -14,18 +14,17 @@ The augmented data can be generated using the Preprocessing.py script in the src
   <img src="images/ROC_wGaussUpsampling.png" alt="ROC_wGaussUpsampling" width="400"/>
 </p>
 
+The best fold was used for significance testing using the [DeLong value](https://pubmed.ncbi.nlm.nih.gov/3203132/) on the test set. No significant difference between Gausian noise upsampling and SMOTE could be observed in the analysis.
 
 ## Requirements
 The python scripts were tested with following packages and versions: 
 
-   * torch 
-   * torchvision
-   * PIL
-   * imblearn
-   * sklearn
-   * torch.utils.data
-   * pandas
-   * numpy
+   * torch 2.1.0
+   * imblearn 0.11.0
+   * sklearn 1.2.2
+   * pandas 2.0.3
+   * numpy 1.26.0
+   * pickle 4.0
 
 
 # Publications
@@ -33,8 +32,8 @@ Please cite following publication if you use the results:
 
 
 # Authors
-   * Jan Benedikt Ruhland, main contributor
-   * Prof. Dr. Dominik Heider, principal inversitgator
+   * Jan Benedikt Ruhland, jan.ruhland@hhu.de, main contributor
+   * Prof. Dr. Dominik Heider, dominik.heider@hhu.de, principal inversitgator
 
 
 # License
