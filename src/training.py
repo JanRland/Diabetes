@@ -1,119 +1,172 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Created on Mon Nov  6 09:53:47 2023
+This script contains the training strategies. This script was also utilized for the grid search.  
 
-@author: jan
+@author: Jan Benedikt Ruhland
+@author: Dominik Heider
+@maintainer: Jan Benedikt Ruhland - jan.ruhland@hhu.de
 """
 
 import torch
 import torch.nn as nn
-from sklearn.metrics import roc_curve, auc, f1_score
-from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
+from sklearn.model_selection import StratifiedKFold
 import numpy as np
 import pickle as pkl
-from DataAugment import Augmentation
-from Diabetes import Diabetes
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 
 
-#
-# Note: upsampling only during training crossvalidation
-#
+from PreProc import removeNan, writeTrainTest
+from model import CustomModel
+from util import init_weights, train_loop, test_eval
+from upsampling import GNUS, SMOTEUp, DownSample, UpSample, StratUpSample, IdsToData, StatisticNormalization
 
-
-torch.manual_seed(10)
-np.random.seed(42)
-
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using {device} device")
-device ="cpu"
-
-#
-# Set the flags
-#
-crossVal=True
-crossValN=10
-nEpochs=20000
-epochFeedback=1000
-saveResults=True
-result_ID=6
-GaussAug=False
-GaussAugMeanStrength=0.01
-GaussAugStdStrength=0.01
-SmoteAug=True
-augFactor=2
-saveFold=6
-
-#
-# Set the NN
-#
-Net=Diabetes()
-Net.double()
-
-#
-# Set training Data
-#
-data=np.load('data.npy')
-
-#
-# Balance if necassary
-#
-a=Augmentation(data)
-#a.downSampleData()
-#data=a.data
-#a.shuffleData()
-
-if not crossVal:
-    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.1)
-    
-    for i, (train_index, test_index) in enumerate(sss.split(a.data[:,1:], a.data[:,0])):
-        print(f"Fold {i}:")
-        print(f"  Train: index={train_index}")
-        print(f"  Test:  index={test_index}")
-        print(a.data[test_index][:,0].shape)
-        print(np.where(a.data[test_index][:,0]>0)[0].shape[0])
-
-
-
-    trainXnp=a.data[train_index][:,1:]
-    trainYnp=a.data[train_index][:,0]
-    trainX=torch.tensor(a.data[test_index][:,1:]).double()
-    trainY=torch.tensor(a.data[test_index][:,0]).double()
-else:
-    trainXnp=data[:,1:]
-    trainYnp=data[:,0]
-    trainX=torch.tensor(data[:,1:]).double()
-    trainY=torch.tensor(data[:,0]).double()
-#
-# Set loss function 
-#
-loss_function = nn.MSELoss()
-#loss_function = nn.CrossEntropyLoss()
-
-#
-# Set optimizer
-#
-#optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-optimizer = torch.optim.SGD(Net.parameters(), lr=0.02)
-
-#
-# Initialise the weights
-#
-def init_weights(m):
-    if isinstance(m, nn.Linear):
-        torch.nn.init.xavier_uniform_(m.weight)
-        m.bias.data.fill_(0.01)
-        
-        
-        
-Net.apply(init_weights)
 
 if __name__ == "__main__":
-    # cross validation flag
+    
+
+
+    # Set seeds to ensure reproducibility
+    #
+    torch.manual_seed(16) 
+    np.random.seed(16)  
+
+    device="cpu"
+    normalize=False
+    
+    #
+    # Tags are used to identify the saved results
+    # tags[0]: boolean, crossVal
+    # tags[1]: boolean, GaussAug
+    # tags[2]: boolean, SmoteAug
+    # tags[3]: boolean, StratifyData
+    # tags[4]: boolean, DownSampleData
+    # tags[5]: boolean, UpSampling
+    # tags[6]: int, number of epochs
+    # tags[7]: int, id
+    #
+    tags=[0,0,0,0,0,0,0,1111]
+    
+    #
+    # Apply cross validation
+    #
+    crossVal=False
     if crossVal:
-        skf = StratifiedKFold(n_splits=crossValN, random_state=None, shuffle=False)
+        tags[0]=1
+    
+    #
+    # Save best result
+    #
+    saveResults=True
+    
+    #
+    # Apply Gaussian noise upsampling
+    #
+    GaussAug=True
+    if GaussAug:
+        tags[1]=1
+    
+    #
+    # Apply SMOTE upsampling
+    #
+    SmoteAug=False
+    if SmoteAug:
+        tags[2]=1
         
+    #
+    # Apply stratification for age and sex
+    #
+    StratifyData=False
+    if StratifyData:
+        tags[3]=1
+        
+    #
+    # Apply downsampling to stratify
+    #
+    DownSampleData=False
+    if DownSampleData:
+        tags[4]=1
+        
+    #
+    # Apply random upsampling
+    #
+    UpSampleData=True
+    if UpSampleData:
+        tags[5]=1
+    
+    #
+    # Number of folds, epochs and reports
+    #
+    crossValN=10
+    nEpochs=2000
+    epochFeedback=25
+    tags[6]=nEpochs
+
+    #
+    # Strength of Gaussian upsampling
+    #
+    GaussAugMeanStrength=0.001
+    GaussAugStdStrength=0.0001
+    
+    #
+    # Remove NaNs from dataset
+    #
+    data=removeNan("data.csv")
+    
+    #
+    # Split final evaluation test split, 10% is testing
+    #
+    N_original=data.shape[0]
+    #test, train=writeTrainTest(data, N_original)
+    
+    test=np.load("test.npy")
+    train=np.load("train.npy")[:,:9]
+    
+    
+    xTest, yTest=test[:,2:], test[:,1]
+    
+    #np.save("test.npy", test)
+    #np.save("train.npy", train)
+    
+    
+    testData=torch.tensor(test[:,2:]).double()
+    testLabel=torch.tensor(test[:,1]).double().unsqueeze(1)
+    trainXnp=train[:,2:] # features
+    trainYnp=train[:,1] # label
+    print("Data Shape: ")
+    print(train.shape)
+    
+    #
+    # Set Model, apply Xavier initialization
+    #     
+    model=CustomModel()
+    model.double()
+    model.apply(init_weights)
+    
+    #
+    # Feature Importance
+    #
+    rf = RandomForestClassifier(n_estimators=50, random_state=42)
+    featureName=["age", "sex", "height", "weight", "taille", "beer", "smoke", "hba1n", "chol", "hbn"]
+    
+    #
+    # Set training Parameters
+    #
+    loss_function = nn.BCELoss()#nn.BCELoss()#nn.MSELoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.03)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,"min", factor=0.5, patience=100,verbose=True)
+    #
+    # Training for cross validation
+    #
+    if crossVal:
+        #
+        # Define split
+        #
+        skf = StratifiedKFold(n_splits=crossValN, random_state=None, shuffle=False)
+
+        #
+        # Save results in lists
+        #
         interpo = np.linspace(0, 1, 100)
         iter_aucs = []
         fprs = []
@@ -121,85 +174,102 @@ if __name__ == "__main__":
         train_metrices=[]
         val_metrices=[]
         
-        if saveResults:
-            torch.save(Net.state_dict(), "NNinit_"+str(result_ID)+'.pth')
         for fold, (train_index, test_index) in enumerate(skf.split(trainXnp, trainYnp)):
+            
+            #
+            # Fold data
+            #
+            print("FOLD: " + str(fold))
             xNpy, yNpy = trainXnp[train_index], trainYnp[train_index] 
-            #
-            # Data Augmentation
-            #
+            data=train[train_index]
+            fold_metric=[]
+            auc_metric=[]
+            loss_metric=[]
+            
+            fold_metric_val=[]
+            auc_metric_val=[]
+            loss_metric_val=[]
             
             #
-            # Gauß noise
+            # Normalization of the data
             #
-            if GaussAug:
-                
-                crossData=np.column_stack((yNpy,xNpy))
-                a.setData(crossData)
-                af, bf=a.getDistribution()
-                at=round(af*a.nSamples)
-                bt=round(bf*a.nSamples)
-                print(at, bt)
-                extraSample=round(augFactor*bt-bt) #1.5 times minority class
-                print(extraSample)
-                print(a.getDistribution())
-                augmentedData=a.GausNoise(extraSample, strengthMean=GaussAugMeanStrength, strengthStd=GaussAugStdStrength)
-                
-                validRows=np.where(a.data[:,0]>0)[0]
-                nRows=validRows.shape[0]
-                print(validRows, a.data[validRows[0],:])
-                unNoisedData=np.zeros((extraSample, 5))
-                for i in range(extraSample):
-                    randomN=np.random.randint(0, extraSample)
-                    unNoisedData[i, :]=a.data[randomN, :]
-                
-                augmentedSamples=randomN+augmentedData[extraSample:,:]
-                augmentedSamples[:,0]=1
-                
-                a.mergeData(augmentedSamples)
-                a.downSampleData()
-                xNpy=a.data[:, 1:]
-                yNpy=a.data[:,0]
-                print(a.getDistribution())
-                
-                
-            #
-            # SMOTE
-            #
-            if SmoteAug:
-                crossData=np.column_stack((yNpy,xNpy))
-                a.setData(crossData)
-                af, bf=a.getDistribution()
-                at=round(af*a.nSamples)
-                bt=round(bf*a.nSamples)
-                print(at, bt)
-                extraSample=round(augFactor*bt-bt) #1.5 times minority class
-                print(extraSample)
-                print(a.getDistribution())
-                
-                imbClass0=a.data[np.where(a.data[:,0]==0)][0:(extraSample+bt),:]
-                imbClass1=a.data[np.where(a.data[:,0]==1)]
-                
-                imbData=np.vstack((imbClass0,imbClass1))
-                a.setData(imbData)
-                
-                x,y=a.smoteUp()
-                res=np.zeros((x.shape[0], x.shape[1]+1))
-                res[:,0]=y
-                res[:,1:]=x
-                
-                xNpy=res[:, 1:]
-                yNpy=res[:,0]
-                
-                a.setData(np.column_stack((yNpy, xNpy)))
+            if normalize:
+                xNpy=StatisticNormalization(data[:,2:], 1)
+
             
             #
-            # Continue training
+            # Apply Gaussian upsampling, SMOTE upsampling, stratification, or 
+            # stratified downsampling
+            #
+            if StratifyData:
+                class_1, class_2 = StratUpSample(data, 2, 3, 8)
+                
+                if GaussAug: 
+                    newData_1=GNUS(data, class_1, 1)
+                    newData_2=GNUS(data, class_2, 1)
+                    
+                    newData=np.vstack((newData_1, newData_2))
+                    np.random.shuffle(newData)
+                    xNpy=newData[:,2:]
+                    yNpy=newData[:,1]
+                    
+                else:
+                    classes=class_1.tolist()+class_2.tolist()
+                    newData=IdsToData(data, classes)
+                    np.random.shuffle(newData)
+                    xNpy=newData[:,2:]
+                    yNpy=newData[:,1]
+            
+            
+            elif SmoteAug:
+                xNpy, yNpy=SMOTEUp(xNpy, yNpy)
+            
+            elif DownSampleData:
+                class_1, class_2 = DownSample(data)
+                
+                if GaussAug: 
+                    newData_1=GNUS(data, class_1, 1)
+                    newData_2=GNUS(data, class_2, 1)
+                    
+                    newData=np.vstack((newData_1, newData_2))
+                    np.random.shuffle(newData)
+                    xNpy=newData[:,2:]
+                    yNpy=newData[:,1]
+                else:
+                    classes=class_1.tolist()+class_2.tolist()
+                    newData=IdsToData(data, classes)
+                    np.random.shuffle(newData)
+                    xNpy=newData[:,2:]
+                    yNpy=newData[:,1]
+                
+            elif UpSampleData:
+                N=int(max(np.sum(yNpy), yNpy.shape[0]-np.sum(yNpy)))
+                class_1, class_2 = UpSample(data, N)
+                
+                if GaussAug: 
+                    newData_1=GNUS(data, class_1, 1)
+                    newData_2=GNUS(data, class_2, 1)
+                    
+                    newData=np.vstack((newData_1, newData_2))
+                    np.random.shuffle(newData)
+                    xNpy=newData[:,2:]
+                    yNpy=newData[:,1]
+                else:
+                    classes=class_1.tolist()+class_2.tolist()
+                    newData=IdsToData(data, classes)
+                    np.random.shuffle(newData)
+                    xNpy=newData[:,2:]
+                    yNpy=newData[:,1]
+            print("New Data Shape: ")
+            #print(newData.shape)
+                
+            
+            #
+            # Define the training and validation set of the split
             #
             x=torch.tensor(xNpy).double()
             y=torch.tensor(yNpy).double()
-            
-            xVal, yVal = trainX[test_index], trainY[test_index] 
+            xVal, yVal = torch.tensor(trainXnp[test_index]).double(), torch.tensor(trainYnp[test_index]).double()
             x = x.to(device)
             y = y.to(device)
             y = y.unsqueeze(1)
@@ -207,92 +277,43 @@ if __name__ == "__main__":
             yVal = yVal.to(device)
             yVal = yVal.unsqueeze(1)
             
+            for f in range(xNpy.shape[1]):
+                if f==1 or f==6:
+                    pass
+                else:
+                    model.norm.m.data[0,f]=torch.tensor(np.mean(xNpy[:,f]))
+                    model.norm.v.data[0,f]=torch.tensor(np.var(xNpy[:,f]))
             
-            fold_metric=[]
-            f1_metric=[]
-            auc_metric=[]
-            loss_metric=[]
+            saveDir="fold_" + str(fold) + "_" + "_".join((str(tags[0]), str(tags[1]),str(tags[2]),str(tags[3]),str(tags[4]),str(tags[5]),str(int(tags[6])), str(tags[7]))) + ".pth"
+            loss_train, auc_train, loss_val, auc_val, fpr, tpr, modelDict = train_loop(model, nEpochs, epochFeedback, loss_function, optimizer, scheduler, x, y, xVal, yVal, saveDir, device)
             
-            fold_metric_val=[]
-            f1_metric_val=[]
-            auc_metric_val=[]
-            loss_metric_val=[]
             
-            for epoch in range(nEpochs):
-                optimizer.zero_grad()
-                
-                y_pred = Net(x)             # Perform a forward pass on the network with inputs
-                loss = loss_function(y_pred, y) # calculate the loss with the network predictions and ground Truth
-                loss.backward()             # Perform a backward pass to calculate the gradients
-                optimizer.step()            # Optimise the network parameters with calculated gradients
-            
-                # calculate validation out_put_values, prediction_values, target values
-                Ynp = (y.detach().numpy()[:,0]).astype(float)
-                y_prednp = (y_pred.detach().numpy()[:,0]).astype(float)
-                fpr, tpr, th = roc_curve(Ynp, y_prednp)
-        
-                roc_auc = auc(fpr, tpr)
-                #f1 = f1_score(Ynp, y_prednp)
-                
-                #f1_metric.append(f1)
-                auc_metric.append(roc_auc)
-                loss_metric.append(loss.item())
-                # Print statistics to console
-                if epoch%epochFeedback==0:
-                    print("Epoch %d, Iteration %5d] AUC: %.3f LOSS: %.3f" % (epoch+1, fold+1, roc_auc, loss.item()))
-                
-                # validation
-                yVal_pred = Net(xVal)
-                loss = loss_function(yVal_pred, yVal)
-                
-                YValnp = yVal.detach().numpy()[:,0]
-                yVal_prednp = yVal_pred.detach().numpy()[:,0]
-                
-                fpr, tpr, th = roc_curve(YValnp, yVal_prednp)
-                roc_auc = auc(fpr, tpr)
-                #f1 = f1_score(YValnp, yVal_prednp)
-                
-                #f1_metric_val.append(f1)
-                auc_metric_val.append(roc_auc)
-                loss_metric_val.append(loss.item())
-                
-                if epoch%epochFeedback==0:        
-                    print("Val AUC: %.3f LOSS: %.3f" % (roc_auc, loss.item()))
-                
-
-            
-            #fold_metric.append(f1_metric)
-            fold_metric.append(auc_metric)
-            fold_metric.append(loss_metric)
-            
+            fold_metric.append(auc_train)
+            fold_metric.append(loss_train)
             train_metrices.append(fold_metric)
             
             interpo_tpr = np.interp(interpo, fpr, tpr)
             interpo_fpr = np.interp(interpo, tpr, fpr)
-        
             tprs.append(interpo_tpr)
             fprs.append(interpo_fpr)
             
-            #fold_metric_val.append(f1_metric)
-            fold_metric_val.append(auc_metric_val)
-            fold_metric_val.append(loss_metric_val)
-            
+            fold_metric_val.append(auc_val)
+            fold_metric_val.append(loss_val)
             val_metrices.append(fold_metric_val)
-            
-            if saveResults:
-                if fold==saveFold:
-                    torch.save(Net.state_dict(), "NNres_"+str(result_ID)+'.pth')
-            
-
+    
         if saveResults:
             metrices=[train_metrices, tprs, fprs, val_metrices]
-            #torch.save(Net.state_dict(), "NNres_"+str(result_ID)+'.pth')
-            with open(('metrices_' + str(result_ID) + '.pkl'), 'wb') as f:
+            saveDir="res_" + "_".join((str(tags[0]), str(tags[1]),str(tags[2]),str(tags[3]),str(tags[4]),str(tags[5]),str(int(tags[6])), str(tags[7]))) + ".pkl"
+            print(saveDir)
+            with open((saveDir), 'wb') as f:
                 pkl.dump(metrices, f)
-            
+            torch.save(modelDict, "network_" + "_".join((str(tags[0]), str(tags[1]),str(tags[2]),str(tags[3]),str(tags[4]),str(tags[5]),str(int(tags[6])), str(tags[7]))) + ".pth")
+    
+    
     else:
-            
-        
+        #
+        # Save results in lists
+        #
         interpo = np.linspace(0, 1, 100)
         iter_aucs = []
         fprs = []
@@ -300,85 +321,94 @@ if __name__ == "__main__":
         train_metrices=[]
         val_metrices=[]
         
-        if saveResults:
-            torch.save(Net.state_dict(), "NNinit_"+str(result_ID)+'.pth')
+        #np.save("train.npy",train)
+        val, train=writeTrainTest(train, N_original)
+        xNpy, yNpy=train[:,2:], train[:,1]
+        xVal, yVal = torch.tensor(val[:,2:]).double(), torch.tensor(val[:,1]).double()
+        data=train
 
-        xNpy, yNpy = trainXnp, trainYnp
         #
-        # Data Augmentation
+        # Normalization of the data
         #
+        if normalize:
+            data[:,2:]=StatisticNormalization(data[:,2:], 1)
+            xNpy=data[:,2:]
         
         #
-        # Gauß noise
+        # Apply Gaussian upsampling, SMOTE upsampling, stratification, or 
+        # stratified downsampling
         #
-        if GaussAug:
+        if StratifyData:
+            class_1, class_2 = StratUpSample(data, 2, 3, 8)
             
-            crossData=np.column_stack((yNpy,xNpy))
-            a.setData(crossData)
-            af, bf=a.getDistribution()
-            at=round(af*a.nSamples)
-            bt=round(bf*a.nSamples)
-            print(at, bt)
-            extraSample=round(augFactor*bt-bt) #1.5 times minority class
-            print(extraSample)
-            print(a.getDistribution())
-            augmentedData=a.GausNoise(extraSample, strengthMean=GaussAugMeanStrength, strengthStd=GaussAugStdStrength)
-            
-            validRows=np.where(a.data[:,0]>0)[0]
-            nRows=validRows.shape[0]
-            print(validRows, a.data[validRows[0],:])
-            unNoisedData=np.zeros((extraSample, 5))
-            for i in range(extraSample):
-                randomN=np.random.randint(0, extraSample)
-                unNoisedData[i, :]=a.data[randomN, :]
-            
-            augmentedSamples=randomN+augmentedData[extraSample:,:]
-            augmentedSamples[:,0]=1
-            
-            a.mergeData(augmentedSamples)
-            a.downSampleData()
-            xNpy=a.data[:, 1:]
-            yNpy=a.data[:,0]
-            print(a.getDistribution())
-            
-            
-        #
-        # SMOTE
-        #
-        if SmoteAug:
-            crossData=np.column_stack((yNpy,xNpy))
-            a.setData(crossData)
-            af, bf=a.getDistribution()
-            at=round(af*a.nSamples)
-            bt=round(bf*a.nSamples)
-            print(at, bt)
-            extraSample=round(augFactor*bt-bt) #1.5 times minority class
-            print(extraSample)
-            print(a.getDistribution())
-            
-            imbClass0=a.data[np.where(a.data[:,0]==0)][0:(extraSample+bt),:]
-            imbClass1=a.data[np.where(a.data[:,0]==1)]
-            
-            imbData=np.vstack((imbClass0,imbClass1))
-            a.setData(imbData)
-            
-            x,y=a.smoteUp()
-            res=np.zeros((x.shape[0], x.shape[1]+1))
-            res[:,0]=y
-            res[:,1:]=x
-            
-            xNpy=res[:, 1:]
-            yNpy=res[:,0]
-            
-            a.setData(np.column_stack((yNpy, xNpy)))
+            if GaussAug: 
+                newData_1=GNUS(data, class_1, 1)
+                newData_2=GNUS(data, class_2, 1)
+                
+                newData=np.vstack((newData_1, newData_2))
+                np.random.shuffle(newData)
+                xNpy=newData[:,2:]
+                yNpy=newData[:,1]
+                
+            else:
+                classes=class_1.tolist()+class_2.tolist()
+                newData=IdsToData(data, classes)
         
+        
+        elif SmoteAug:
+            xNpy, yNpy=SMOTEUp(xNpy, yNpy)
+        
+        elif DownSampleData:
+            class_1, class_2 = DownSample(data)
+            
+            if GaussAug: 
+                newData_1=GNUS(data, class_1, 1)
+                newData_2=GNUS(data, class_2, 1)
+                
+                newData=np.vstack((newData_1, newData_2))
+                np.random.shuffle(newData)
+                xNpy=newData[:,2:]
+                yNpy=newData[:,1]
+            else:
+                classes=class_1.tolist()+class_2.tolist()
+                newData=IdsToData(data, classes)
+            
+        elif UpSampleData:
+            N=int(max(np.sum(yNpy), yNpy.shape[0]-np.sum(yNpy)))
+            print(np.sum(yNpy))
+            print(yNpy.shape[0]-np.sum(yNpy))
+            class_1, class_2 = UpSample(data, int(2.*N))
+            print(class_1.shape)
+            print(class_2.shape)
+            
+            if GaussAug: 
+                newData_1=GNUS(data, class_1, 1)
+                newData_2=GNUS(data, class_2, 1)
+                print(newData_1.shape)
+                print(newData_2.shape)
+                
+                
+                newData=np.vstack((newData_1, newData_2))
+                
+                print(newData.shape)
+                print(np.sum(newData[:,1]==1))
+                print(np.sum(newData[:,1]==0))
+                np.random.shuffle(newData)
+                xNpy=newData[:,2:]
+                yNpy=newData[:,1]
+            else:
+                classes=class_1.tolist()+class_2.tolist()
+                newData=IdsToData(data, classes)
+                
+        if normalize:
+            xNpy=StatisticNormalization(xNpy, 1)
         #
-        # Continue training
+        # Define the training and validation set of the split
         #
+        train2=np.column_stack((yNpy, xNpy))
+        #np.save("train_4params.npy",train2)
         x=torch.tensor(xNpy).double()
         y=torch.tensor(yNpy).double()
-        
-        xVal, yVal = trainX, trainY
         x = x.to(device)
         y = y.to(device)
         y = y.unsqueeze(1)
@@ -386,85 +416,55 @@ if __name__ == "__main__":
         yVal = yVal.to(device)
         yVal = yVal.unsqueeze(1)
         
+        rf.fit(xNpy, yNpy)
+        importances = rf.feature_importances_
+        p=[(x, round(y,2)) for y, x in reversed(sorted(zip(importances, featureName)))]
+        for elm in p:
+            print(elm[0] + " & " + str(elm[1]) + ' \\\\')
         
-        fold_metric=[]
-        f1_metric=[]
-        auc_metric=[]
-        loss_metric=[]
         
-        fold_metric_val=[]
-        f1_metric_val=[]
-        auc_metric_val=[]
-        loss_metric_val=[]
+        for f in range(xNpy.shape[1]):
+            if f==1 or f==6:
+                pass
+            else:
+                model.norm.m.data[0,f]=torch.tensor(np.mean(xNpy[:,f]))
+                model.norm.v.data[0,f]=torch.tensor(np.var(xNpy[:,f]))
+        saveDir="result_training" + "_" + "_".join((str(tags[0]), str(tags[1]),str(tags[2]),str(tags[3]),str(tags[4]),str(tags[5]),str(int(tags[6])), str(tags[7]))) + ".pth"
+        loss_train, auc_train, loss_val, auc_val, fpr, tpr, modelDict = train_loop(model, nEpochs, epochFeedback, loss_function, optimizer, scheduler, x, y, xVal, yVal, saveDir, device)
         
-        for epoch in range(nEpochs):
-            optimizer.zero_grad()
-            
-            y_pred = Net(x)             # Perform a forward pass on the network with inputs
-            loss = loss_function(y_pred, y) # calculate the loss with the network predictions and ground Truth
-            loss.backward()             # Perform a backward pass to calculate the gradients
-            optimizer.step()            # Optimise the network parameters with calculated gradients
         
-            # calculate validation out_put_values, prediction_values, target values
-            Ynp = (y.detach().numpy()[:,0]).astype(float)
-            y_prednp = (y_pred.detach().numpy()[:,0]).astype(float)
-            fpr, tpr, th = roc_curve(Ynp, y_prednp)
-    
-            roc_auc = auc(fpr, tpr)
-            #f1 = f1_score(Ynp, y_prednp)
-            
-            #f1_metric.append(f1)
-            auc_metric.append(roc_auc)
-            loss_metric.append(loss.item())
-            # Print statistics to console
-            if epoch%epochFeedback==0:
-                print("Epoch %d] AUC: %.3f LOSS: %.3f" % (epoch+1, roc_auc, loss.item()))
-            
-            # validation
-            yVal_pred = Net(xVal)
-            loss = loss_function(yVal_pred, yVal)
-            
-            YValnp = yVal.detach().numpy()[:,0]
-            yVal_prednp = yVal_pred.detach().numpy()[:,0]
-            
-            fpr, tpr, th = roc_curve(YValnp, yVal_prednp)
-            roc_auc = auc(fpr, tpr)
-            #f1 = f1_score(YValnp, yVal_prednp)
-            
-            #f1_metric_val.append(f1)
-            auc_metric_val.append(roc_auc)
-            loss_metric_val.append(loss.item())
-            
-            if epoch%epochFeedback==0:        
-                print("Val AUC: %.3f LOSS: %.3f" % (roc_auc, loss.item()))
-            
-
-        
-        #fold_metric.append(f1_metric)
-        fold_metric.append(auc_metric)
-        fold_metric.append(loss_metric)
-        
-        train_metrices.append(fold_metric)
+        train_metrices.append(auc_train)
+        train_metrices.append(loss_train)
         
         interpo_tpr = np.interp(interpo, fpr, tpr)
         interpo_fpr = np.interp(interpo, tpr, fpr)
-    
         tprs.append(interpo_tpr)
         fprs.append(interpo_fpr)
         
-        #fold_metric_val.append(f1_metric)
-        fold_metric_val.append(auc_metric_val)
-        fold_metric_val.append(loss_metric_val)
+        val_metrices.append(auc_val)
+        val_metrices.append(loss_val)
         
-        val_metrices.append(fold_metric_val)
-        
-
+        print(auc_val.index(np.amax(auc_val)))
+    
         if saveResults:
             metrices=[train_metrices, tprs, fprs, val_metrices]
-            torch.save(Net.state_dict(), "NNres_"+str(result_ID)+'.pth')
-            with open(('metrices_' + str(result_ID) + '.pkl'), 'wb') as f:
+            saveDir="results_train_" + "_".join((str(tags[0]), str(tags[1]),str(tags[2]),str(tags[3]),str(tags[4]),str(tags[5]),str(int(tags[6])), str(tags[7]))) + ".pkl"
+            with open((saveDir), 'wb') as f:
                 pkl.dump(metrices, f)
-                  
-            
-            
-            
+            #torch.save(modelDict, "network_" + "_".join((str(tags[0]), str(tags[1]),str(tags[2]),str(tags[3]),str(tags[4]),str(tags[5]),str(int(tags[6])), str(tags[7]))) + ".pth")
+            torch.save(modelDict, "network_7params.pth")
+                
+        #
+        # Final Evaluation
+        #
+        model.load_state_dict(modelDict)
+        model.eval()
+        print(testData.shape)
+        test_loss, test_fpr, test_tpr, test_auc = test_eval(model, loss_function, testData, testLabel)
+        print("Test AUC:")
+        print(test_auc)
+        if saveResults:
+            metrices=[test_loss, test_tpr, test_fpr, test_auc]
+            saveDir="results_test_" + "_".join((str(tags[0]), str(tags[1]),str(tags[2]),str(tags[3]),str(tags[4]),str(tags[5]),str(int(tags[6])), str(tags[7]))) + ".pkl"
+            with open((saveDir), 'wb') as f:
+                pkl.dump(metrices, f)
