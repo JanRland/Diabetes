@@ -52,12 +52,7 @@ class CustomModel(nn.Module):
         
         self.norm=AdaptiveNorm((1,nFeatures))
         self.l1 = nn.Linear(nFeatures, nFeatures)
-        self.l2 =  nn.Linear(nFeatures, nFeatures*2)
-        self.l3 =  nn.Linear(nFeatures*2, nFeatures*2)
-        self.l4 =  nn.Linear(nFeatures*2, nFeatures*2)
-        self.l5 =  nn.Linear(nFeatures*2, nFeatures)
-        self.l6 =  nn.Linear(nFeatures, nFeatures)
-        self.activation=nn.Tanh()
+
         
         self.b1 = DeepNetBlock(nFeatures, nFeatures)
         self.b2 = DeepNetBlock(nFeatures, nFeatures*2)
